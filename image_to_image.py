@@ -33,7 +33,6 @@ class StableDiffusionImg2ImgPipeline(DiffusionPipeline):
         feature_extractor: CLIPFeatureExtractor,
     ):
         super().__init__()
-        scheduler = scheduler.set_format("pt")
         self.register_modules(
             vae=vae,
             text_encoder=text_encoder,
@@ -78,7 +77,7 @@ class StableDiffusionImg2ImgPipeline(DiffusionPipeline):
         self.scheduler.set_timesteps(num_inference_steps, **extra_set_kwargs)
 
         # encode the init image into latents and scale the latents
-        init_latents = self.vae.encode(init_image.to(self.device)).sample()
+        init_latents = self.vae.encode(init_image.to(self.device)).latent_dist.sample().detach()
         init_latents = 0.18215 * init_latents
 
         # prepare init_latents noise to latents
@@ -137,7 +136,7 @@ class StableDiffusionImg2ImgPipeline(DiffusionPipeline):
             latent_model_input = torch.cat([latents] * 2) if do_classifier_free_guidance else latents
 
             # predict the noise residual
-            noise_pred = self.unet(latent_model_input, t, encoder_hidden_states=text_embeddings)["sample"]
+            noise_pred = self.unet(latent_model_input, t, encoder_hidden_states=text_embeddings).images
 
             # perform guidance
             if do_classifier_free_guidance:

@@ -1,3 +1,4 @@
+from email import message
 import torch
 from torch import autocast
 from diffusers import StableDiffusionPipeline
@@ -13,7 +14,7 @@ import random
 
 load_dotenv()
 TG_TOKEN = os.getenv('TG_TOKEN')
-MODEL_DATA = os.getenv('MODEL_DATA', 'CompVis/stable-diffusion-v1-4')
+MODEL_DATA = os.getenv('MODEL_DATA', 'runwayml/stable-diffusion-v1-5')
 LOW_VRAM_MODE = (os.getenv('LOW_VRAM', 'true').lower() == 'true')
 USE_AUTH_TOKEN = (os.getenv('USE_AUTH_TOKEN', 'true').lower() == 'true')
 SAFETY_CHECKER = (os.getenv('SAFETY_CHECKER', 'true').lower() == 'true')
@@ -69,7 +70,7 @@ def generate_image(prompt, seed=None, height=HEIGHT, width=WIDTH, num_inference_
                                     generator=generator,
                                     strength=strength,
                                     guidance_scale=guidance_scale,
-                                    num_inference_steps=num_inference_steps)["sample"][0]
+                                    num_inference_steps=num_inference_steps).images[0]
     else:
         pipe.to("cuda")
         img2imgPipe.to("cpu")
@@ -80,15 +81,21 @@ def generate_image(prompt, seed=None, height=HEIGHT, width=WIDTH, num_inference_
                                     height=height,
                                     width=width,
                                     guidance_scale=guidance_scale,
-                                    num_inference_steps=num_inference_steps)["sample"][0]
+                                    num_inference_steps=num_inference_steps).images[0]
     return image, seed
 
 
 async def generate_and_send_photo(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    text = update.message.text.strip()
+    if text.startswith(context.bot.name):
+        text = text[len(context.bot.name):].strip()
+    if len(text) == 0:
+        return
     progress_msg = await update.message.reply_text("Generating image...", reply_to_message_id=update.message.message_id)
-    im, seed = generate_image(prompt=update.message.text)
+    im, seed = generate_image(prompt=text)
     await context.bot.delete_message(chat_id=progress_msg.chat_id, message_id=progress_msg.message_id)
-    await context.bot.send_photo(update.effective_user.id, image_to_bytes(im), caption=f'"{update.message.text}" (Seed: {seed})', reply_markup=get_try_again_markup(), reply_to_message_id=update.message.message_id)
+    await update.message.reply_photo(image_to_bytes(im), caption=f'"{text}" (Seed: {seed})', reply_markup=get_try_again_markup())
+
 
 async def generate_and_send_photo_from_photo(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     if update.message.caption is None:
@@ -99,7 +106,7 @@ async def generate_and_send_photo_from_photo(update: Update, context: ContextTyp
     photo = await photo_file.download_as_bytearray()
     im, seed = generate_image(prompt=update.message.caption, photo=photo)
     await context.bot.delete_message(chat_id=progress_msg.chat_id, message_id=progress_msg.message_id)
-    await context.bot.send_photo(update.effective_user.id, image_to_bytes(im), caption=f'"{update.message.caption}" (Seed: {seed})', reply_markup=get_try_again_markup(), reply_to_message_id=update.message.message_id)
+    await update.message.reply_photo(image_to_bytes(im), caption=f'"{update.message.caption}" (Seed: {seed})', reply_markup=get_try_again_markup())
 
 
 async def button(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -130,7 +137,7 @@ async def button(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 
 app = ApplicationBuilder().token(TG_TOKEN).build()
 
-app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, generate_and_send_photo))
+app.add_handler(MessageHandler(filters.TEXT, generate_and_send_photo))
 app.add_handler(MessageHandler(filters.PHOTO, generate_and_send_photo_from_photo))
 app.add_handler(CallbackQueryHandler(button))
 
